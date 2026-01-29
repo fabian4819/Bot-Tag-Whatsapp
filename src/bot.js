@@ -1,9 +1,11 @@
 const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
-const { handleTagAll } = require('./commands');
+const { handleTagAll, handleTagSpecific } = require('./commands');
 const { sleep } = require('./utils');
-const { ALLOWED_NUMBERS } = require('../config');
+
+// Global phone number map
+const phoneNumberMap = new Map();
 
 async function startBot(sessionName = 'default') {
     try {
@@ -115,74 +117,62 @@ async function startBot(sessionName = 'default') {
             
             // Check if it's a group message
             const isGroup = msg.key.remoteJid.endsWith('@g.us');
-            
+
+            // Build phone number map from participantPn if available
+            if (isGroup && msg.key.participantPn && msg.key.participant) {
+                const phone = msg.key.participantPn.split('@')[0];
+                const lid = msg.key.participant;
+                
+                // Store both formats
+                phoneNumberMap.set(phone, lid);
+                phoneNumberMap.set(lid, lid);
+                
+                // Add 0-prefix variation if starts with 62
+                if (phone.startsWith('62')) {
+                    const withZero = '0' + phone.slice(2);
+                    phoneNumberMap.set(withZero, lid);
+                } 
+                // Add 62-prefix variation if starts with 0
+                else if (phone.startsWith('0')) {
+                    const with62 = '62' + phone.slice(1);
+                    phoneNumberMap.set(with62, lid);
+                }
+                
+                console.log(`   📞 Auto-mapped: ${phone} -> ${lid}`);
+            }
+
             // Debug logging
             console.log('\n📨 Processing message:');
             console.log(`   From: ${isGroup ? 'Group' : 'Private'}`);
             console.log(`   Text: "${text}"`);
             console.log(`   Type: ${m.type}`);
-            
+
             if (isGroup) {
-                // Check if sender is in whitelist
-                let isAllowed = false;
-                let senderPhone = null;
-                
-                if (msg.key.fromMe) {
-                    // Message from bot itself
-                    isAllowed = true;
-                    senderPhone = 'bot';
-                } else if (msg.key.participant) {
-                    // Extract phone number from participant
-                    // Try multiple formats:
-                    // 1. participantPn field (if available)
-                    // 2. Extract from LID or regular JID
-                    
-                    if (msg.key.participantPn) {
-                        senderPhone = msg.key.participantPn.split('@')[0];
-                    } else {
-                        // For LID format (202855784939752@lid), we need to check against a mapping
-                        // For now, we'll try to extract from participant
-                        const participant = msg.key.participant.split('@')[0];
-                        
-                        // Check if it's a regular phone number format
-                        if (participant.match(/^\d{10,15}$/)) {
-                            senderPhone = participant;
-                        }
-                    }
-                    
-                    // Check against whitelist
-                    if (senderPhone && ALLOWED_NUMBERS.includes(senderPhone)) {
-                        isAllowed = true;
-                    }
-                }
-                
+                // All group members can now use bot commands
                 console.log(`   From Me: ${msg.key.fromMe}`);
                 console.log(`   Participant: ${msg.key.participant || 'N/A'}`);
-                console.log(`   Participant PN: ${msg.key.participantPn || 'N/A'}`);
-                console.log(`   Sender Phone: ${senderPhone || 'Unknown'}`);
-                console.log(`   Is Allowed: ${isAllowed}`);
-                console.log(`   Whitelist: ${ALLOWED_NUMBERS.join(', ')}`);
-                
-                // Only process commands from whitelisted numbers
-                if (!isAllowed && (text.startsWith('!tagall') || text.startsWith('!everyone') || text === '!info')) {
-                    console.log('   🚫 Command ignored: Not in whitelist');
-                    return;
+                console.log(`   Group: ${msg.key.remoteJid}`);
+                console.log(`   ✅ All members allowed to use commands`);
+
+                // Handle tag specific command
+                if (text.startsWith('!tag') && !text.startsWith('!tagall')) {
+                    console.log('✅ Tag specific command detected!');
+                    await handleTagSpecific(sock, msg, phoneNumberMap);
                 }
-                
                 // Handle tag all command
-                if (text.startsWith('!tagall') || text.startsWith('!everyone')) {
-                    console.log('✅ Tag all command detected from owner!');
+                else if (text.startsWith('!tagall') || text.startsWith('!everyone')) {
+                    console.log('✅ Tag all command detected!');
                     await handleTagAll(sock, msg);
                 }
-                
                 // Handle info command
                 else if (text === '!info') {
-                    console.log('✅ Info command detected from owner!');
+                    console.log('✅ Info command detected!');
                     await sock.sendMessage(msg.key.remoteJid, {
                         text: '🤖 *WhatsApp Tag All Bot*\n\n' +
-                              'Commands (Owner only):\n' +
+                              'Commands:\n' +
                               '• !tagall [pesan] - Tag semua member\n' +
                               '• !everyone [pesan] - Tag semua member\n' +
+                              '• !tag - Tag member spesifik (tulis nomor per baris)\n' +
                               '• !info - Info bot'
                     });
                 }

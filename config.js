@@ -3,6 +3,7 @@
 const ALLOWED_NUMBERS = [
     '628569042342',  // Nomor owner
     '6282232018289',
+    '62882015861262',
     // Tambahkan nomor lain di sini jika perlu
     // '628123456789',
 ];

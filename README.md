@@ -5,7 +5,8 @@ Bot WhatsApp untuk tag semua member di grup dengan command sederhana. Bot ini bi
 ## 🚀 Fitur
 
 - ✅ Tag all members di grup dengan satu command
-- ✅ **Whitelist-based access** - Hanya nomor yang terdaftar di whitelist yang bisa pakai command
+- ✅ Tag beberapa member tertentu dengan nomor telepon
+- ✅ **Semua member grup bisa menggunakan bot**
 - ✅ Multi-device support (bisa dipasang di banyak nomor)
 - ✅ Auto-reconnect jika terputus
 - ✅ QR Code authentication
@@ -36,33 +37,15 @@ npm start
 
 4. **Bot siap digunakan!**
 
-## ⚙️ Konfigurasi Whitelist
-
-Edit file `config.js` untuk menambahkan nomor yang diizinkan menggunakan bot:
-
-```javascript
-const ALLOWED_NUMBERS = [
-    '6282232018289',  // Nomor owner
-    '628123456789',   // Nomor lain yang diizinkan
-    // Tambahkan nomor lain di sini
-];
-```
-
-**Format nomor:**
-- Gunakan format internasional tanpa `+`
-- Contoh: `6282232018289` (Indonesia)
-- Jangan gunakan spasi atau tanda hubung
-
 ## 📱 Cara Menggunakan
 
 ### Commands yang tersedia:
-
-> **⚠️ PENTING**: Hanya nomor WhatsApp yang terdaftar di whitelist (`config.js`) yang bisa menggunakan command ini. Member lain di grup akan diabaikan.
 
 | Command | Deskripsi | Contoh |
 |---------|-----------|--------|
 | `!tagall [pesan]` | Tag semua member | `!tagall Meeting penting!` |
 | `!everyone [pesan]` | Alias untuk tagall | `!everyone Jangan lupa bayar iuran` |
+| `!tag` | Tag member tertentu (tulis nomor per baris) | Lihat contoh di bawah |
 | `!info` | Info tentang bot | `!info` |
 
 ### Contoh Penggunaan:
@@ -77,7 +60,22 @@ const ALLOWED_NUMBERS = [
    !tagall
    ```
 
-3. **Cek info bot:**
+3. **Tag member tertentu (inline dengan pesan):**
+   ```
+   !tag 082232018289 085161885170 jangan lupa meeting jam 3
+   ```
+
+4. **Tag member tertentu (multi-line):**
+   ```
+   !tag
+   087800073210
+   085161885170
+   082232018289
+   ```
+   
+   Bot akan mencari nomor-nomor tersebut di grup dan tag mereka.
+
+5. **Cek info bot:**
    ```
    !info
    ```
