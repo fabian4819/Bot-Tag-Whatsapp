@@ -141,164 +141,244 @@ async function handleTagSpecific(sock, msg, phoneNumberMap) {
         // Extract everything after !tag command
         const content = text.replace(/^!tag\s*/, '').trim();
 
-        // Parse content - support two formats:
-        // 1. Inline: !tag 082232018289 085161885170 custom message
-        // 2. Multi-line: !tag\n082232018289\n085161885170
+        // Parse content into message blocks
+        // Each block consists of: [message line(s), phone number(s)]
+        // We'll send separate messages for each block
         
-        let phoneNumbers = [];
-        let customMessage = '';
+        const phonePattern = /^(\+?62|0)\d{8,15}$/;
+        
+        // Parse into blocks
+        const messageBlocks = [];
         
         if (content.includes('\n')) {
             // Multi-line format
-            phoneNumbers = content
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0);
+            const lines = content.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            
+            let currentMessage = '';
+            let currentPhones = [];
+            
+            for (const line of lines) {
+                if (phonePattern.test(line)) {
+                    // This is a phone number
+                    currentPhones.push(line);
+                } else {
+                    // This is a message line
+                    // If we have accumulated phones, save the current block
+                    if (currentPhones.length > 0) {
+                        messageBlocks.push({
+                            message: currentMessage,
+                            phones: currentPhones
+                        });
+                        currentMessage = '';
+                        currentPhones = [];
+                    }
+                    
+                    // Check if line contains phone numbers mixed with text
+                    const words = line.split(/\s+/);
+                    const linePhones = [];
+                    const messageWords = [];
+                    
+                    for (const word of words) {
+                        if (phonePattern.test(word)) {
+                            linePhones.push(word);
+                        } else {
+                            messageWords.push(word);
+                        }
+                    }
+                    
+                    if (linePhones.length > 0) {
+                        // Mixed line - has both message and phones
+                        const lineMessage = messageWords.join(' ').trim();
+                        if (lineMessage) {
+                            currentMessage = lineMessage;
+                        }
+                        currentPhones.push(...linePhones);
+                    } else {
+                        // Pure message line
+                        if (currentMessage) {
+                            currentMessage += '\n' + line;
+                        } else {
+                            currentMessage = line;
+                        }
+                    }
+                }
+            }
+            
+            // Don't forget the last block
+            if (currentPhones.length > 0) {
+                messageBlocks.push({
+                    message: currentMessage,
+                    phones: currentPhones
+                });
+            }
         } else {
-            // Inline format - split by spaces
+            // Inline format - treat as single block
             const parts = content.split(/\s+/);
+            const phones = [];
+            const messageWords = [];
             
-            // Extract phone numbers (anything that looks like a number)
-            phoneNumbers = parts.filter(part => /^\d+$/.test(part));
+            for (const part of parts) {
+                if (phonePattern.test(part)) {
+                    phones.push(part);
+                } else {
+                    messageWords.push(part);
+                }
+            }
             
-            // Everything else is the custom message
-            const messageWords = parts.filter(part => !/^\d+$/.test(part));
-            customMessage = messageWords.join(' ').trim();
+            if (phones.length > 0) {
+                messageBlocks.push({
+                    message: messageWords.join(' ').trim(),
+                    phones: phones
+                });
+            }
         }
 
-        console.log(`\n🔍 Nomor yang dicari: ${phoneNumbers.join(', ')}`);
-        console.log(`📝 Custom message: "${customMessage}"`);
+        console.log(`\n📦 Parsed ${messageBlocks.length} message block(s):`);
+        messageBlocks.forEach((block, idx) => {
+            console.log(`   Block ${idx + 1}: "${block.message}" -> [${block.phones.join(', ')}]`);
+        });
 
-        if (phoneNumbers.length === 0) {
+        if (messageBlocks.length === 0) {
             await sock.sendMessage(groupId, {
                 text: '❌ Format salah! Gunakan:\n\n' +
                       '*Format 1 (inline):*\n' +
                       '!tag 082232018289 085161885170 pesan custom\n\n' +
                       '*Format 2 (multi-line):*\n' +
-                      '!tag\n087800073210\n085161885170'
+                      '!tag\n' +
+                      'PESAN PERTAMA\n' +
+                      '082232018289\n\n' +
+                      'PESAN KEDUA\n' +
+                      '085161885170'
             });
             return;
         }
 
-        // Convert phone numbers to JID format and find matching participants
-        const mentions = [];
-        const taggedNumbers = [];
+        // Process each message block separately
+        for (const block of messageBlocks) {
+            const { message: customMessage, phones: phoneNumbers } = block;
+            
+            // Convert phone numbers to JID format and find matching participants
+            const mentions = [];
+            const taggedNumbers = [];
 
-        phoneNumbers.forEach(phoneNumber => {
-            // Remove non-numeric characters
-            let cleanPhone = phoneNumber.replace(/\D/g, '');
+            for (const phoneNumber of phoneNumbers) {
+                // Remove non-numeric characters
+                let cleanPhone = phoneNumber.replace(/\D/g, '');
 
-            // Convert to different formats
-            const formats = [];
+                // Convert to different formats
+                const formats = [];
 
-            // Original format
-            formats.push(cleanPhone);
+                // Original format
+                formats.push(cleanPhone);
 
-            // If starts with 0, convert to 62
-            if (cleanPhone.startsWith('0')) {
-                formats.push('62' + cleanPhone.slice(1));
-            }
-            // If starts with 62, convert to 0
-            else if (cleanPhone.startsWith('62')) {
-                formats.push('0' + cleanPhone.slice(2));
-            }
-
-            // Remove duplicates
-            const uniqueFormats = [...new Set(formats)];
-
-            console.log(`\n   Mencari nomor: ${phoneNumber}`);
-            console.log(`   Clean: ${cleanPhone}`);
-            console.log(`   Formats to try: ${uniqueFormats.join(', ')}`);
-
-            // First, check if we have this phone in our phone number map
-            let matchedJid = null;
-            for (const format of uniqueFormats) {
-                if (phoneNumberMap.has(format)) {
-                    matchedJid = phoneNumberMap.get(format);
-                    console.log(`   ✅ Found in phone number map: ${format} -> ${matchedJid}`);
-                    break;
+                // If starts with 0, convert to 62
+                if (cleanPhone.startsWith('0')) {
+                    formats.push('62' + cleanPhone.slice(1));
                 }
-            }
+                // If starts with 62, convert to 0
+                else if (cleanPhone.startsWith('62')) {
+                    formats.push('0' + cleanPhone.slice(2));
+                }
 
-            // If not found in map, try to find in participants by direct ID matching
-            if (!matchedJid) {
-                const matchedParticipant = participants.find(p => {
-                    const participantId = p.id.split('@')[0];
+                // Remove duplicates
+                const uniqueFormats = [...new Set(formats)];
 
-                    // Try exact match
-                    if (uniqueFormats.includes(participantId)) {
-                        return true;
+                console.log(`\n   Mencari nomor: ${phoneNumber}`);
+                console.log(`   Clean: ${cleanPhone}`);
+                console.log(`   Formats to try: ${uniqueFormats.join(', ')}`);
+
+                // First, check if we have this phone in our phone number map
+                let matchedJid = null;
+                for (const format of uniqueFormats) {
+                    if (phoneNumberMap.has(format)) {
+                        matchedJid = phoneNumberMap.get(format);
+                        console.log(`   ✅ Found in phone number map: ${format} -> ${matchedJid}`);
+                        break;
                     }
+                }
 
-                    // Try suffix matching
-                    for (const format of uniqueFormats) {
-                        if (participantId.endsWith(format) || format.endsWith(participantId)) {
+                // If not found in map, try to find in participants by direct ID matching
+                if (!matchedJid) {
+                    const matchedParticipant = participants.find(p => {
+                        const participantId = p.id.split('@')[0];
+
+                        // Try exact match
+                        if (uniqueFormats.includes(participantId)) {
                             return true;
                         }
+
+                        // Try suffix matching
+                        for (const format of uniqueFormats) {
+                            if (participantId.endsWith(format) || format.endsWith(participantId)) {
+                                return true;
+                            }
+                        }
+
+                        return false;
+                    });
+
+                    if (matchedParticipant) {
+                        matchedJid = matchedParticipant.id;
+                        console.log(`   ✅ Found by participant matching: ${matchedJid}`);
                     }
+                }
 
-                    return false;
-                });
-
-                if (matchedParticipant) {
-                    matchedJid = matchedParticipant.id;
-                    console.log(`   ✅ Found by participant matching: ${matchedJid}`);
+                if (matchedJid) {
+                    console.log(`   ✅ DITEMUKAN: ${matchedJid}`);
+                    mentions.push(matchedJid);
+                    taggedNumbers.push({
+                        original: phoneNumber,
+                        jid: matchedJid,
+                        found: true
+                    });
+                } else {
+                    console.log(`   ❌ TIDAK DITEMUKAN`);
+                    taggedNumbers.push({
+                        original: phoneNumber,
+                        found: false
+                    });
                 }
             }
 
-            if (matchedJid) {
-                console.log(`   ✅ DITEMUKAN: ${matchedJid}`);
-                mentions.push(matchedJid);
-                taggedNumbers.push({
-                    original: phoneNumber,
-                    jid: matchedJid,
-                    found: true
+            // Build message for this block
+            let messageText = '';
+            
+            // Add custom message if provided
+            if (customMessage) {
+                messageText = `📢 ${customMessage}\n\n`;
+            } else {
+                messageText = '📢 *Tag Specific Members*\n\n';
+            }
+
+            if (mentions.length > 0) {
+                messageText += '*Tagged Members:*\n';
+                taggedNumbers.forEach((item, index) => {
+                    if (item.found) {
+                        const number = item.jid.split('@')[0];
+                        messageText += `${index + 1}. @${number}\n`;
+                    } else {
+                        messageText += `${index + 1}. ${item.original} ❌ (Not found in group)\n`;
+                    }
                 });
             } else {
-                console.log(`   ❌ TIDAK DITEMUKAN`);
-                taggedNumbers.push({
-                    original: phoneNumber,
-                    found: false
+                messageText += '❌ Tidak ada nomor yang ditemukan di grup ini.\n\n';
+                messageText += '*Nomor yang dicari:*\n';
+                phoneNumbers.forEach((phone, index) => {
+                    messageText += `${index + 1}. ${phone}\n`;
                 });
+                messageText += '\n*Tips:* Pastikan nomor sudah benar dan orangnya ada di grup.';
             }
-        });
 
-        // Build message
-        let message = '';
-        
-        // Add custom message if provided
-        if (customMessage) {
-            message = `📢 *${customMessage}*\n\n`;
-        } else {
-            message = '📢 *Tag Specific Members*\n\n';
+            // Send message with mentions for this block
+            await sock.sendMessage(groupId, {
+                text: messageText,
+                mentions: mentions
+            });
+
+            console.log(`\n✅ Tagged ${mentions.length} out of ${phoneNumbers.length} numbers in this block`);
         }
 
-        if (mentions.length > 0) {
-            message += '*Tagged Members:*\n';
-            taggedNumbers.forEach((item, index) => {
-                if (item.found) {
-                    const number = item.jid.split('@')[0];
-                    message += `${index + 1}. @${number}\n`;
-                } else {
-                    message += `${index + 1}. ${item.original} ❌ (Not found in group)\n`;
-                }
-            });
-        } else {
-            message += '❌ Tidak ada nomor yang ditemukan di grup ini.\n\n';
-            message += '*Nomor yang dicari:*\n';
-            phoneNumbers.forEach((phone, index) => {
-                message += `${index + 1}. ${phone}\n`;
-            });
-            message += '\n*Tips:* Pastikan nomor sudah benar dan orangnya ada di grup.';
-        }
-
-        // Send message with mentions
-        await sock.sendMessage(groupId, {
-            text: message,
-            mentions: mentions
-        });
-
-        console.log(`\n✅ Tagged ${mentions.length} out of ${phoneNumbers.length} numbers`);
+        console.log(`\n🎉 Sent ${messageBlocks.length} message(s) total`);
 
     } catch (error) {
         console.error('❌ Error in handleTagSpecific:', error);
