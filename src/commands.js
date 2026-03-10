@@ -242,7 +242,7 @@ async function handleTagSpecific(sock, msg, phoneNumberMap) {
                 mentions.push(jid);
                 tokenToMention.set(token, `@${number}`);
             } else {
-                tokenToMention.set(token, token); // keep as-is if not found
+                tokenToMention.set(token, `${token} (tidak ada di grup)`);
             }
         }
 
