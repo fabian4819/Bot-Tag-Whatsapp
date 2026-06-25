@@ -1,17 +1,19 @@
 const https = require('https');
 
-function postJson(url, payload, redirectCount = 0) {
+function requestJson(url, payload, method = 'POST', redirectCount = 0) {
     return new Promise((resolve, reject) => {
         const parsedUrl = new URL(url);
-        const body = JSON.stringify(payload);
+        const body = method === 'GET' ? '' : JSON.stringify(payload);
 
         const request = https.request({
             hostname: parsedUrl.hostname,
             path: `${parsedUrl.pathname}${parsedUrl.search}`,
-            method: 'POST',
+            method,
             headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(body)
+                ...(body ? {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(body)
+                } : {})
             }
         }, (response) => {
             const chunks = [];
@@ -26,7 +28,8 @@ function postJson(url, payload, redirectCount = 0) {
                         return;
                     }
 
-                    postJson(response.headers.location, payload, redirectCount + 1)
+                    const redirectMethod = [301, 302, 303].includes(response.statusCode) ? 'GET' : method;
+                    requestJson(response.headers.location, payload, redirectMethod, redirectCount + 1)
                         .then(resolve)
                         .catch(reject);
                     return;
@@ -42,7 +45,7 @@ function postJson(url, payload, redirectCount = 0) {
         });
 
         request.on('error', reject);
-        request.write(body);
+        if (body) request.write(body);
         request.end();
     });
 }
@@ -54,7 +57,7 @@ function createGoogleSheetWebhook(options = {}) {
     async function appendGroupTrack(record, sessionName) {
         if (!webhookUrl) return false;
 
-        await postJson(webhookUrl, {
+        await requestJson(webhookUrl, {
             secret,
             event: 'group_tracked',
             sessionName,
