@@ -46,6 +46,7 @@ npm start
 | `!tagall [pesan]` | Tag semua member | `!tagall Meeting penting!` |
 | `!everyone [pesan]` | Alias untuk tagall | `!everyone Jangan lupa bayar iuran` |
 | `!tag` | Tag member tertentu (tulis nomor per baris) | Lihat contoh di bawah |
+| `!autoleave` | Cek jadwal bot keluar otomatis dari grup | `!autoleave` |
 | `!info` | Info tentang bot | `!info` |
 
 ### Contoh Penggunaan:
@@ -79,6 +80,24 @@ npm start
    ```
    !info
    ```
+
+## 📊 Google Sheet Tracking
+
+Bot bisa append grup yang baru pertama kali tercatat ke Google Sheet melalui Apps Script Web App.
+
+1. Buka spreadsheet target, lalu Apps Script.
+2. Copy isi `google-apps-script-all-track.js` ke Apps Script.
+3. Ganti `WEBHOOK_SECRET`.
+4. Deploy sebagai Web App dengan akses yang sesuai.
+5. Set environment variable sebelum menjalankan bot:
+
+```bash
+export GOOGLE_SHEET_WEBHOOK_URL="https://script.google.com/macros/s/.../exec"
+export GOOGLE_SHEET_WEBHOOK_SECRET="secret-yang-sama"
+npm start
+```
+
+Data akan masuk ke sheet bernama `All Track`.
 
 ## 🔄 Multi-Nomor Setup
 

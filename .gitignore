@@ -1,5 +1,8 @@
 node_modules/
 sessions/
+data/*.json
+!data/group-memberships.example.json
+!data/manual-join-dates-default.json
 *.log
 .env
 .DS_Store

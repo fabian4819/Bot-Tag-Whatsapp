@@ -2,6 +2,8 @@ const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLat
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
 const { handleTagAll, handleTagSpecific } = require('./commands');
+const { createGoogleSheetWebhook } = require('./googleSheetWebhook');
+const { createGroupMembershipTracker } = require('./groupMembershipTracker');
 const { sleep } = require('./utils');
 
 // Global phone number map
@@ -9,6 +11,13 @@ const phoneNumberMap = new Map();
 
 async function startBot(sessionName = 'default') {
     try {
+        const sheetWebhook = createGoogleSheetWebhook();
+        const membershipTracker = createGroupMembershipTracker(sessionName, {
+            autoLeaveDays: 30,
+            onGroupCreated: (record) => sheetWebhook.appendGroupTrack(record, sessionName)
+        });
+        let autoLeaveInterval = null;
+
         // Setup authentication state
         const { state, saveCreds } = await useMultiFileAuthState(`./sessions/${sessionName}`);
         
@@ -46,6 +55,11 @@ async function startBot(sessionName = 'default') {
             }
             
             if (connection === 'close') {
+                if (autoLeaveInterval) {
+                    clearInterval(autoLeaveInterval);
+                    autoLeaveInterval = null;
+                }
+
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 
@@ -72,7 +86,19 @@ async function startBot(sessionName = 'default') {
                 console.log(`📱 Session: ${sessionName}`);
                 console.log(`👤 Owner JID: ${botOwnerJid}`);
                 console.log(`📞 Owner Phone: ${ownerPhone}`);
+                console.log(`📊 Google Sheet sync: ${sheetWebhook.enabled ? 'aktif' : 'nonaktif'}`);
                 console.log('🎯 Menunggu perintah di grup...\n');
+
+                await membershipTracker.trackAllParticipatingGroups(sock);
+                await membershipTracker.leaveExpiredGroups(sock);
+
+                if (!autoLeaveInterval) {
+                    autoLeaveInterval = setInterval(() => {
+                        membershipTracker.leaveExpiredGroups(sock).catch((error) => {
+                            console.error('❌ Error auto-leave scheduler:', error.message);
+                        });
+                    }, 60 * 60 * 1000);
+                }
             } else if (connection === 'connecting') {
                 console.log('🔄 Connecting to WhatsApp...');
             }
@@ -80,6 +106,22 @@ async function startBot(sessionName = 'default') {
 
     // Save credentials when updated
     sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('groups.upsert', async (groups) => {
+        for (const group of groups || []) {
+            await membershipTracker.trackGroup(sock, group.id, 'group_upsert', group.subject || null);
+        }
+    });
+
+    sock.ev.on('groups.update', async (groups) => {
+        for (const group of groups || []) {
+            await membershipTracker.trackGroup(sock, group.id, 'group_update', group.subject || null);
+        }
+    });
+
+    sock.ev.on('group-participants.update', async (update) => {
+        await membershipTracker.trackGroup(sock, update.id, `participant_${update.action || 'update'}`);
+    });
     
     // Log all events for debugging
     console.log('📡 Registering message listener...');
@@ -117,6 +159,9 @@ async function startBot(sessionName = 'default') {
             
             // Check if it's a group message
             const isGroup = msg.key.remoteJid.endsWith('@g.us');
+            if (isGroup) {
+                await membershipTracker.trackGroup(sock, msg.key.remoteJid, 'message');
+            }
 
             // Build phone number map from participantPn if available
             if (isGroup && msg.key.participantPn && msg.key.participant) {
@@ -173,8 +218,28 @@ async function startBot(sessionName = 'default') {
                               '• !tagall [pesan] - Tag semua member\n' +
                               '• !everyone [pesan] - Tag semua member\n' +
                               '• !tag - Tag member spesifik (tulis nomor per baris)\n' +
+                              '• !autoleave - Info jadwal bot keluar dari grup\n' +
                               '• !info - Info bot'
                     });
+                }
+                else if (text === '!autoleave') {
+                    const groups = membershipTracker.listGroups();
+                    const record = groups.find(group => group.groupId === msg.key.remoteJid);
+
+                    if (!record) {
+                        await sock.sendMessage(msg.key.remoteJid, {
+                            text: 'Belum ada data auto-leave untuk grup ini.'
+                        });
+                    } else {
+                        await sock.sendMessage(msg.key.remoteJid, {
+                            text: '*Auto Leave Grup*\n\n' +
+                                  `Group ID: ${record.groupId}\n` +
+                                  `Nama: ${record.subject || '-'}\n` +
+                                  `Tanggal masuk: ${record.joinedAt}\n` +
+                                  `Keluar otomatis: ${record.leaveAfterAt}\n` +
+                                  `Sumber tanggal: ${record.source}`
+                        });
+                    }
                 }
                 else {
                     console.log('   ℹ️ Not a bot command');
@@ -198,4 +263,3 @@ async function startBot(sessionName = 'default') {
 }
 
 module.exports = { startBot };
-
