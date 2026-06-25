@@ -9,6 +9,7 @@ function createGroupMembershipTracker(sessionName, options = {}) {
     const dataDir = path.join(process.cwd(), 'data');
     const dataFile = path.join(dataDir, `group-memberships-${sessionName}.json`);
     const manualJoinDatesFile = path.join(dataDir, `manual-join-dates-${sessionName}.json`);
+    const sheetSyncInFlight = new Set();
 
     function calculateLeaveAfter(joinedAt) {
         return new Date(new Date(joinedAt).getTime() + autoLeaveDays * DAY_MS).toISOString();
@@ -134,7 +135,11 @@ function createGroupMembershipTracker(sessionName, options = {}) {
     }
 
     async function syncRecordToSheet(state, record) {
+        if (sheetSyncInFlight.has(record.groupId)) return;
+
+        sheetSyncInFlight.add(record.groupId);
         record.sheetLastSyncAttemptAt = new Date().toISOString();
+        saveState(state);
 
         try {
             const synced = await onGroupCreated(record);
@@ -146,6 +151,8 @@ function createGroupMembershipTracker(sessionName, options = {}) {
         } catch (error) {
             record.sheetSyncError = error.message;
             console.error(`❌ Gagal sync grup ke Google Sheet ${record.groupId}:`, error.message);
+        } finally {
+            sheetSyncInFlight.delete(record.groupId);
         }
 
         saveState(state);
