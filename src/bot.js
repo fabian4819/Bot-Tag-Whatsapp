@@ -73,9 +73,9 @@ async function startBot(sessionName = 'default') {
                 console.log(`   Will reconnect: ${shouldReconnect}\n`);
                 
                 if (shouldReconnect) {
-                    console.log('⏳ Menunggu 3 detik sebelum reconnect...\n');
+                    console.log('⏳ Menunggu 3 detik sebelum PM2 restart proses...\n');
                     await sleep(3000);
-                    startBot(sessionName);
+                    process.exit(1);
                 } else {
                     console.log('🔒 Bot logged out. Silakan hapus folder sessions dan scan QR lagi.\n');
                     process.exit(0);
