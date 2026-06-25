@@ -123,6 +123,17 @@ function createGroupMembershipTracker(sessionName, options = {}) {
         fs.writeFileSync(dataFile, JSON.stringify(state, null, 2));
     }
 
+    function updateRecord(groupId, fields) {
+        const latestState = loadState();
+        const latestRecord = latestState.groups[groupId];
+        if (!latestRecord) return null;
+
+        Object.assign(latestRecord, fields);
+        saveState(latestState);
+
+        return latestRecord;
+    }
+
     function shouldRetrySheetSync(record, source) {
         if (!onGroupCreated) return false;
         if (record.sheetSyncedAt && !record.sheetSyncError) return false;
@@ -139,23 +150,32 @@ function createGroupMembershipTracker(sessionName, options = {}) {
 
         sheetSyncInFlight.add(record.groupId);
         record.sheetLastSyncAttemptAt = new Date().toISOString();
-        saveState(state);
+        updateRecord(record.groupId, {
+            sheetLastSyncAttemptAt: record.sheetLastSyncAttemptAt
+        });
 
         try {
             const synced = await onGroupCreated(record);
             if (synced) {
                 record.sheetSyncedAt = new Date().toISOString();
                 record.sheetSyncError = null;
+                updateRecord(record.groupId, {
+                    sheetSyncedAt: record.sheetSyncedAt,
+                    sheetSyncError: null,
+                    sheetLastSyncAttemptAt: record.sheetLastSyncAttemptAt
+                });
                 console.log(`📊 Grup tersync ke Google Sheet: ${record.subject || record.groupId}`);
             }
         } catch (error) {
             record.sheetSyncError = error.message;
+            updateRecord(record.groupId, {
+                sheetSyncError: record.sheetSyncError,
+                sheetLastSyncAttemptAt: record.sheetLastSyncAttemptAt
+            });
             console.error(`❌ Gagal sync grup ke Google Sheet ${record.groupId}:`, error.message);
         } finally {
             sheetSyncInFlight.delete(record.groupId);
         }
-
-        saveState(state);
     }
 
     async function getGroupSubject(sock, groupId) {
