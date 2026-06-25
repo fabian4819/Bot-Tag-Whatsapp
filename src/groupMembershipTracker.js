@@ -122,6 +122,35 @@ function createGroupMembershipTracker(sessionName, options = {}) {
         fs.writeFileSync(dataFile, JSON.stringify(state, null, 2));
     }
 
+    function shouldRetrySheetSync(record, source) {
+        if (!onGroupCreated) return false;
+        if (record.sheetSyncedAt && !record.sheetSyncError) return false;
+        if (source === 'message') return false;
+
+        const lastAttemptAt = record.sheetLastSyncAttemptAt ? new Date(record.sheetLastSyncAttemptAt).getTime() : 0;
+        if (!lastAttemptAt) return true;
+
+        return Date.now() - lastAttemptAt > 10 * 60 * 1000;
+    }
+
+    async function syncRecordToSheet(state, record) {
+        record.sheetLastSyncAttemptAt = new Date().toISOString();
+
+        try {
+            const synced = await onGroupCreated(record);
+            if (synced) {
+                record.sheetSyncedAt = new Date().toISOString();
+                record.sheetSyncError = null;
+                console.log(`📊 Grup tersync ke Google Sheet: ${record.subject || record.groupId}`);
+            }
+        } catch (error) {
+            record.sheetSyncError = error.message;
+            console.error(`❌ Gagal sync grup ke Google Sheet ${record.groupId}:`, error.message);
+        }
+
+        saveState(state);
+    }
+
     async function getGroupSubject(sock, groupId) {
         try {
             const metadata = await sock.groupMetadata(groupId);
@@ -168,6 +197,10 @@ function createGroupMembershipTracker(sessionName, options = {}) {
                 saveState(state);
             }
 
+            if (shouldRetrySheetSync(existing, source)) {
+                await syncRecordToSheet(state, existing);
+            }
+
             return existing;
         }
 
@@ -193,18 +226,7 @@ function createGroupMembershipTracker(sessionName, options = {}) {
         console.log(`   Auto leave: ${record.leaveAfterAt}`);
 
         if (onGroupCreated) {
-            try {
-                const synced = await onGroupCreated(record);
-                if (synced) {
-                    record.sheetSyncedAt = new Date().toISOString();
-                    record.sheetSyncError = null;
-                    saveState(state);
-                }
-            } catch (error) {
-                record.sheetSyncError = error.message;
-                saveState(state);
-                console.error(`❌ Gagal sync grup ke Google Sheet ${record.groupId}:`, error.message);
-            }
+            await syncRecordToSheet(state, record);
         }
 
         return record;
