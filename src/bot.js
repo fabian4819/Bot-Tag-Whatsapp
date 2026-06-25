@@ -1,3 +1,4 @@
+const QRCode = require('qrcode');
 const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const pino = require('pino');
@@ -52,6 +53,9 @@ async function startBot(sessionName = 'default') {
                 console.log('\n📱 Scan QR Code ini dengan WhatsApp:');
                 console.log('   Buka WhatsApp → Settings → Linked Devices → Link a Device\n');
                 qrcode.generate(qr, { small: true });
+                QRCode.toFile('/tmp/wa-qr.png', qr, { scale: 8 }, (err) => {
+                    if (!err) console.log('QR saved to /tmp/wa-qr.png');
+                });
             }
             
             if (connection === 'close') {
