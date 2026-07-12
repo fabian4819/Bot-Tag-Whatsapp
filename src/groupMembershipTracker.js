@@ -301,14 +301,40 @@ function createGroupMembershipTracker(sessionName, options = {}) {
         try {
             const groups = await sock.groupFetchAllParticipating();
             const entries = Object.values(groups || {});
+            const activeGroupIds = new Set(entries.map(group => group.id).filter(Boolean));
 
             for (const group of entries) {
                 await trackGroup(sock, group.id, 'startup', group.subject || null);
             }
 
+            await markMissingActiveGroupsLeft(activeGroupIds);
+
             console.log(`🗓️ Tracking ${entries.length} grup aktif untuk auto-leave ${autoLeaveDays} hari`);
         } catch (error) {
             console.error('❌ Gagal mengambil daftar grup aktif:', error.message);
+        }
+    }
+
+    async function markMissingActiveGroupsLeft(activeGroupIds) {
+        const state = loadState();
+        let changed = false;
+
+        for (const record of Object.values(state.groups)) {
+            if (record.status !== 'active') continue;
+            if (activeGroupIds.has(record.groupId)) continue;
+
+            record.status = 'left';
+            record.leftAt = new Date().toISOString();
+            record.lastError = null;
+            record.updatedAt = record.leftAt;
+            record.leftReason = 'not_in_participating_groups';
+            await syncLeftToSheet(record);
+            changed = true;
+            console.log(`🚪 Grup ditandai left karena bot tidak lagi menjadi member: ${record.subject || record.groupId}`);
+        }
+
+        if (changed) {
+            saveState(state);
         }
     }
 
