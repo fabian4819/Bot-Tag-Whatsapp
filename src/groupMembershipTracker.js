@@ -199,12 +199,33 @@ function createGroupMembershipTracker(sessionName, options = {}) {
             resolvedSubject = await getGroupSubject(sock, groupId);
         }
 
-        const manualJoinDate = findManualJoinDate(groupId, resolvedSubject);
+        const isRejoin = existing?.status === 'left';
+        const manualJoinDate = isRejoin ? null : findManualJoinDate(groupId, resolvedSubject);
         const effectiveJoinedAt = joinedAt || manualJoinDate?.joinedAt || null;
         const effectiveSource = manualJoinDate ? manualJoinDate.source : source;
 
         if (existing) {
             let changed = false;
+            const rejoinedAt = new Date().toISOString();
+
+            if (isRejoin) {
+                existing.status = 'active';
+                existing.leftAt = null;
+                existing.lastError = null;
+                existing.joinedAt = effectiveJoinedAt || rejoinedAt;
+                existing.firstSeenAt = rejoinedAt;
+                existing.leaveAfterAt = calculateLeaveAfter(existing.joinedAt);
+                existing.updatedAt = rejoinedAt;
+                existing.source = effectiveSource;
+                existing.sheetSyncedAt = null;
+                existing.sheetSyncError = null;
+                existing.sheetLastSyncAttemptAt = null;
+                changed = true;
+
+                console.log(`🗓️ Grup rejoin tercatat ulang: ${resolvedSubject || groupId}`);
+                console.log(`   Joined at: ${existing.joinedAt}`);
+                console.log(`   Auto leave: ${existing.leaveAfterAt}`);
+            }
 
             if (resolvedSubject && existing.subject !== resolvedSubject) {
                 existing.subject = resolvedSubject;
