@@ -6,6 +6,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function createGroupMembershipTracker(sessionName, options = {}) {
     const autoLeaveDays = options.autoLeaveDays || 30;
     const onGroupCreated = options.onGroupCreated;
+    const onGroupLeft = options.onGroupLeft;
     const dataDir = path.join(process.cwd(), 'data');
     const dataFile = path.join(dataDir, `group-memberships-${sessionName}.json`);
     const manualJoinDatesFile = path.join(dataDir, `manual-join-dates-${sessionName}.json`);
@@ -178,6 +179,22 @@ function createGroupMembershipTracker(sessionName, options = {}) {
         }
     }
 
+    async function syncLeftToSheet(record) {
+        if (!onGroupLeft) return;
+
+        try {
+            const synced = await onGroupLeft(record);
+            if (synced) {
+                record.leftSheetSyncedAt = new Date().toISOString();
+                record.leftSheetSyncError = null;
+                console.log(`📊 Status left tersync ke Google Sheet: ${record.subject || record.groupId}`);
+            }
+        } catch (error) {
+            record.leftSheetSyncError = error.message;
+            console.error(`❌ Gagal sync status left ke Google Sheet ${record.groupId}:`, error.message);
+        }
+    }
+
     async function getGroupSubject(sock, groupId) {
         try {
             const metadata = await sock.groupMetadata(groupId);
@@ -314,6 +331,7 @@ function createGroupMembershipTracker(sessionName, options = {}) {
                 record.status = 'left';
                 record.leftAt = new Date().toISOString();
                 record.lastError = null;
+                await syncLeftToSheet(record);
                 changed = true;
             } catch (error) {
                 record.lastError = error.message;

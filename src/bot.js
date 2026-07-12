@@ -15,7 +15,8 @@ async function startBot(sessionName = 'default') {
         const sheetWebhook = createGoogleSheetWebhook();
         const membershipTracker = createGroupMembershipTracker(sessionName, {
             autoLeaveDays: 30,
-            onGroupCreated: (record) => sheetWebhook.appendGroupTrack(record, sessionName)
+            onGroupCreated: (record) => sheetWebhook.appendGroupTrack(record, sessionName),
+            onGroupLeft: (record) => sheetWebhook.updateGroupLeft(record, sessionName)
         });
         let autoLeaveInterval = null;
 

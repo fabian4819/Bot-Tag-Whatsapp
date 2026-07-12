@@ -73,8 +73,29 @@ function createGoogleSheetWebhook(options = {}) {
         return true;
     }
 
+    async function updateGroupLeft(record, sessionName) {
+        if (!webhookUrl) return false;
+
+        await requestJson(webhookUrl, {
+            secret,
+            event: 'group_left',
+            sessionName,
+            groupId: record.groupId,
+            subject: record.subject,
+            joinedAt: record.joinedAt,
+            firstSeenAt: record.firstSeenAt,
+            leaveAfterAt: record.leaveAfterAt,
+            leftAt: record.leftAt,
+            source: record.source,
+            status: record.status
+        });
+
+        return true;
+    }
+
     return {
         appendGroupTrack,
+        updateGroupLeft,
         enabled: Boolean(webhookUrl)
     };
 }
